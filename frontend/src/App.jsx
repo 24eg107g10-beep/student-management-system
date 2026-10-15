@@ -1,4 +1,4 @@
-```jsx
+
 import { useEffect, useState } from "react";
 import "./App.css";
 
@@ -15,16 +15,25 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [message, setMessage] = useState("Loading students...");
 
+  // Get all students from the backend
   async function loadStudents() {
     try {
       const response = await fetch(API_URL);
 
       if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
+        throw new Error("Server returned " + response.status);
       }
 
       const data = await response.json();
-      setStudents(Array.isArray(data) ? data : data.content ?? []);
+
+      if (Array.isArray(data)) {
+        setStudents(data);
+      } else if (data && Array.isArray(data.content)) {
+        setStudents(data.content);
+      } else {
+        setStudents([]);
+      }
+
       setMessage("");
     } catch (error) {
       setMessage(
@@ -37,21 +46,31 @@ function App() {
     loadStudents();
   }, []);
 
+  // Update form fields
   function handleChange(event) {
-    setForm({ ...form, [event.target.name]: event.target.value });
+    const { name, value } = event.target;
+
+    setForm((previousForm) => ({
+      ...previousForm,
+      [name]: value,
+    }));
   }
 
+  // Add a new student or update an existing student
   async function handleSubmit(event) {
     event.preventDefault();
 
-    try {
-      const url = editingId
-        ? `${API_URL}/${editingId}`
-        : API_URL;
+    const isEditing = editingId !== null;
+    const url = isEditing
+      ? API_URL + "/" + editingId
+      : API_URL;
 
+    try {
       const response = await fetch(url, {
-        method: editingId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        method: isEditing ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(form),
       });
 
@@ -59,41 +78,86 @@ function App() {
         throw new Error("Could not save student");
       }
 
-      setForm({ name: "", email: "", course: "" });
+      setForm({
+        name: "",
+        email: "",
+        course: "",
+      });
+
       setEditingId(null);
-      setMessage("Student saved successfully.");
       await loadStudents();
+      setMessage(
+        isEditing
+          ? "Student updated successfully."
+          : "Student added successfully."
+      );
     } catch (error) {
       setMessage(
-        "Could not save student. Check your backend API endpoints."
+        "Could not save student. Check the backend API and request fields."
       );
     }
   }
 
+  // Fill the form for editing
   function editStudent(student) {
+    const id = student.id ?? student.studentId;
+
+    if (id === undefined || id === null) {
+      setMessage("Student ID was not found.");
+      return;
+    }
+
     setForm({
       name: student.name ?? "",
       email: student.email ?? "",
       course: student.course ?? "",
     });
-    setEditingId(student.id);
+
+    setEditingId(id);
+    setMessage("Editing student record.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function deleteStudent(id) {
-    if (!window.confirm("Delete this student?")) return;
+  // Delete a student
+  async function deleteStudent(student) {
+    const id = student.id ?? student.studentId;
+
+    if (id === undefined || id === null) {
+      setMessage("Student ID was not found.");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this student?")) {
+      return;
+    }
 
     try {
-      const response = await fetch(`${API_URL}/${id}`, {
+      const response = await fetch(API_URL + "/" + id, {
         method: "DELETE",
       });
 
-      if (!response.ok) throw new Error("Delete failed");
+      if (!response.ok) {
+        throw new Error("Could not delete student");
+      }
 
-      setMessage("Student deleted successfully.");
       await loadStudents();
+      setMessage("Student deleted successfully.");
     } catch (error) {
-      setMessage("Could not delete student. Check your backend API.");
+      setMessage(
+        "Could not delete student. Check the backend API."
+      );
     }
+  }
+
+  // Cancel editing
+  function cancelEdit() {
+    setEditingId(null);
+    setForm({
+      name: "",
+      email: "",
+      course: "",
+    });
+    setMessage("");
   }
 
   return (
@@ -102,7 +166,7 @@ function App() {
         <div>
           <p className="eyebrow">STUDENT PORTAL</p>
           <h1>Student Management System</h1>
-          <p>Manage student records in one place.</p>
+          <p>Manage your student records in one place.</p>
         </div>
       </header>
 
@@ -111,32 +175,37 @@ function App() {
           <span>Total Students</span>
           <strong>{students.length}</strong>
         </div>
+
         <div className="stat-card">
-          <span>System Status</span>
-          <strong className="status">Connected / Checking</strong>
+          <span>Application</span>
+          <strong className="status">Student Portal</strong>
         </div>
       </section>
 
       <section className="panel">
-        <h2>{editingId ? "Edit Student" : "Add New Student"}</h2>
+        <h2>{editingId !== null ? "Edit Student" : "Add New Student"}</h2>
 
         <form onSubmit={handleSubmit} className="student-form">
           <input
+            type="text"
             name="name"
             placeholder="Student name"
             value={form.name}
             onChange={handleChange}
             required
           />
+
           <input
-            name="email"
             type="email"
+            name="email"
             placeholder="Email address"
             value={form.email}
             onChange={handleChange}
             required
           />
+
           <input
+            type="text"
             name="course"
             placeholder="Course"
             value={form.course}
@@ -145,17 +214,14 @@ function App() {
           />
 
           <button type="submit">
-            {editingId ? "Update Student" : "Add Student"}
+            {editingId !== null ? "Update Student" : "Add Student"}
           </button>
 
-          {editingId && (
+          {editingId !== null && (
             <button
               type="button"
               className="secondary"
-              onClick={() => {
-                setEditingId(null);
-                setForm({ name: "", email: "", course: "" });
-              }}
+              onClick={cancelEdit}
             >
               Cancel
             </button>
@@ -166,7 +232,11 @@ function App() {
       <section className="panel">
         <div className="table-heading">
           <h2>Student Records</h2>
-          <button className="secondary" onClick={loadStudents}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={loadStudents}
+          >
             Refresh
           </button>
         </div>
@@ -184,26 +254,40 @@ function App() {
                 <th>Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {students.map((student, index) => (
-                <tr key={student.id ?? index}>
-                  <td>{student.id ?? student.studentId ?? "-"}</td>
-                  <td>{student.name}</td>
-                  <td>{student.email}</td>
-                  <td>{student.course}</td>
+                <tr
+                  key={
+                    student.id ??
+                    student.studentId ??
+                    index
+                  }
+                >
+                  <td>
+                    {student.id ??
+                      student.studentId ??
+                      "-"}
+                  </td>
+
+                  <td>{student.name ?? "-"}</td>
+                  <td>{student.email ?? "-"}</td>
+                  <td>{student.course ?? "-"}</td>
+
                   <td>
                     <div className="actions">
                       <button
+                        type="button"
                         className="edit"
                         onClick={() => editStudent(student)}
                       >
                         Edit
                       </button>
+
                       <button
+                        type="button"
                         className="delete"
-                        onClick={() =>
-                          deleteStudent(student.id ?? student.studentId)
-                        }
+                        onClick={() => deleteStudent(student)}
                       >
                         Delete
                       </button>
@@ -211,9 +295,12 @@ function App() {
                   </td>
                 </tr>
               ))}
+
               {students.length === 0 && !message && (
                 <tr>
-                  <td colSpan="5">No student records found.</td>
+                  <td colSpan="5">
+                    No student records found.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -221,10 +308,11 @@ function App() {
         </div>
       </section>
 
-      <footer>Student Management System · React + Spring Boot</footer>
+      <footer>
+        Student Management System | React + Spring Boot + MySQL
+      </footer>
     </main>
   );
 }
 
 export default App;
-```
